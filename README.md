@@ -1,113 +1,182 @@
-# V-GEPF: Vision-Based Generic Potential Function for Policy Alignment in Multi-Agent Reinforcement Learning
+# Vision-Based Generic Potential Function (V-GEPF)
 
-[![license](https://img.shields.io/badge/license-Apache%202.0-blue.svg?style=flat)](./LICENSE)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)]()
+[English](README.md) | [中文](README_CN.md)
 
-This repository contains the official implementation of the AAAI 2025 paper "Vision-Based Generic Potential Function for Policy Alignment in Multi-Agent Reinforcement Learning". This work introduces **V-GEPF**, a novel framework that leverages Vision-Language Models (VLMs) to generate potential-based rewards for complex multi-agent reinforcement learning tasks in the Google Research Football (GRF) environment.
+[![AAAI 2025](https://img.shields.io/badge/AAAI-2025-blue)](https://aaai.org/conference/aaai/aaai-25/)
+[![arXiv](https://img.shields.io/badge/arXiv-2502.13430-red)](https://arxiv.org/abs/2502.13430)
+[![Python 3.9](https://img.shields.io/badge/python-3.9-green.svg)](https://www.python.org/downloads/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-ee4c2c.svg)](https://pytorch.org/)
 
-This project is built upon the [GRF MARL Lib](https://github.com/jidiai/GRF_MARL) and extends it with VLM-driven reward shaping and policy alignment.
+---
 
-----
+## 🏛️ About This Repository
 
-## Contents
-- [Install](#install)
-- [How to Run V-GEPF](#how-to-run-v-gepf)
-- [Core Implementation](#core-implementation)
-- [Alternative: xT-based Potential Reward](#alternative-xt-based-potential-reward)
-- [Original GRF MARL Lib Documentation](#original-grf-marl-lib-documentation)
-- [Citation](#citation)
-- [Contact](#contact)
+This repository is maintained by **[CASIA-Collect-AI](https://github.com/CASIA-Collect-AI)** as part of a curated collection of high-quality MARL research code.
 
-----
+📌 **Original Repository (Recommended):** [Marroh/V-GEPF-official-code](https://github.com/Marroh/V-GEPF-official-code)
+⭐ **If this work is helpful, please Star the original repository to support the authors!**
 
-## Install
+> **Team:** Intelligent Flight Technology Team (Swarm Intelligence Group), Institute of Automation, Chinese Academy of Sciences (CASIA), led by Prof. Zhiqiang Pu.
+> CASIA-Collect-AI curates and maintains high-quality open-source research code in MARL, LLM, and robotics.
 
-The installation largely follows the setup of the base [GRF MARL Lib](https://github.com/jidiai/GRF_MARL). Additionally, this project requires dependencies for the MiniCPM-o model.
+---
 
-1.  **Create a Conda Environment**
-    You can use any tool to manage your python environment. Here, we use conda as an example.
-    ```bash
-    conda create -n v-gepf python==3.9
-    conda activate v-gepf
-    ```
+Official implementation of **Vision-Based Generic Potential Function for Policy Alignment in Multi-Agent Reinforcement Learning** (AAAI 2025).
 
-2.  **Install Google Research Football**
-    Follow the instructions in the [official repo](https://github.com/google-research/football) to install the GRF environment.
+**Authors:** Hao Ma, Shijie Wang, Zhiqiang Pu, Siyao Zhao, Xiaolin Ai
+**Affiliations:** Institute of Automation, Chinese Academy of Sciences; University of Chinese Academy of Sciences
 
-3.  **Install Base Framework**
-    ```bash
-    pip install . -e
-    ```
+---
 
-4.  **Install MiniCPM-o Dependencies**
-    V-GEPF relies on the MiniCPM-o vision-language model. Please follow the installation guide at the [official MiniCPM-o repository](https://github.com/OpenBMB/MiniCPM-o) to set up the necessary components.
+## Abstract
 
-----
+Multi-agent reinforcement learning (MARL) in complex environments such as Google Research Football (GRF) faces a core challenge: agents often converge to locally optimal but tactically poor policies — lacking coordination, positioning, and human-intuitive play styles.
 
-## How to Run V-GEPF
+This paper proposes **V-GEPF**, a framework that leverages Vision-Language Models (VLMs) to generate **potential-based reward shaping** for MARL policy alignment. The key insight: by encoding game states as images and measuring cosine similarity with human-language instructions, V-GEPF provides a generic, human-interpretable reward signal that steers agent behavior toward desired strategies without environment-specific reward engineering.
 
-### 1. Configuration
+**Three core contributions:**
+1. A VLM-based **generic potential function** using cosine distance between image and text encodings
+2. An adaptive **vLLM-based selector** that automatically chooses appropriate potential functions based on video replays of past episodes
+3. Demonstrated policy alignment in GRF 11-vs-11, outperforming PPO/MAPPO/HAPPO baselines
 
-Before running the experiments, you need to configure the paths to your downloaded VLM and CLIP models.
+---
 
--   **Set Model Paths:**
-    Open `light_malib/vlm/vlm_critic.py` and update the hardcoded paths for the models you intend to use. Pay attention to the `__init__` methods of classes like `LocalMiniCPM`, `MiniCPMCritic`, and `CLIPCritic`. For example:
-    ```python
-    class LocalMiniCPM:
-        def __init__(self, model_path='/path/to/your/openbmb-MiniCPM-Llama3-V-2_5', device='auto'):
-            # ...
+## 📖 Paper Deep Dive
 
-    class CLIPCritic:
-        def __init__(self):
-            self.clip, self.preprocess = clip.load("/path/to/your/CLIP/RN50.pt", device="cuda")
-    ```
+### The Problem: Policy Misalignment in Complex MARL
 
--   **(Optional) Set OpenAI API Keys:**
-    If you plan to use GPT series of models, as the VLM, open `light_malib/vlm/utils.py` and set your OpenAI API key and base URL:
-    ```python
-    os.environ['OPENAI_API_KEY'] = 'your-api-key'
-    os.environ["OPENAI_BASE_URL"] = 'your-base-url'
-    ```
+Standard MARL training (MAPPO, HAPPO) in the GRF 11-vs-11 scenario produces policies that win games through simple tactics — but exhibit poor tactical quality:
 
-### 2. Execution
+<div align="center">
+  <img src="imgs/fig_motivation_a.png" width="340" style="display:inline-block; margin:4px;">
+  <img src="imgs/fig_motivation_b.png" width="340" style="display:inline-block; margin:4px;">
+</div>
 
-Run an experiment by executing one of the shell scripts located in the `/scripts` directory. These scripts are pre-configured for different scenarios.
+*(Left) MAPPO: non-ball-holding players fail to occupy valuable space. (Right) HAPPO: players lack coordinated positioning to create passing opportunities.*
 
-For example, to run V-GEPF with MAPPO in the 11-vs-11 full-game scenario:
+The reward signal alone cannot encode strategic quality — a goal scored through chaotic play counts the same as a team goal from coordinated build-up. V-GEPF addresses this with visually grounded reward shaping.
+
+---
+
+### V-GEPF Framework
+
+<div align="center"><img src="imgs/fig_framework.png" width="750"></div>
+
+*V-GEPF framework: game state image + human instruction → CLIP cosine distance → potential reward → policy alignment. A vLLM watches episode replays and adaptively selects which potential function to apply.*
+
+**Two-stage design:**
+
+**Stage 1 — CLIP-based Potential Function**
+- Game state is rendered as an image $s_t^G$
+- Human instruction $l$ (e.g., "maintain triangle passing shape") is encoded as text
+- Cosine distance between image and text embeddings defines the potential: $\phi(s_t | l) = \text{cos}(\text{enc}_\text{img}(s_t^G), \text{enc}_\text{txt}(l))$
+- Potential-based reward shaping: $r'_t = r_t + \gamma \phi(s_{t+1}) - \phi(s_t)$
+
+**Stage 2 — vLLM Adaptive Selector**
+- At the start of each training phase, a vLLM (e.g., MiniCPM-o) watches the video replay of the last episode
+- Given a pool of potential functions and reflection on previous selections, the vLLM chooses the most appropriate instruction
+- This enables curriculum-style learning: early phases focus on basic positioning; later phases target advanced tactics
+
+---
+
+### Adaptive Potential Function Selection
+
+<div align="center"><img src="imgs/fig_potential.png" width="620"></div>
+
+*Potential function curves during training. Six VLM-based potential functions are selected sequentially by the vLLM, each guiding the agents toward increasingly sophisticated tactical behaviors.*
+
+The vLLM selects from a pool of human-defined instructions (attack, defend, formation, dribble, etc.) based on video evidence of current policy weaknesses — mimicking how a human coach adjusts training focus.
+
+---
+
+### Experimental Results
+
+**Environment:** Google Research Football (GRF)
+- **11-vs-11 Easy**: Standard opponent AI
+- **11-vs-11 Hard**: Stronger opponent AI
+- **Academy Scenarios**: counterattack_easy, counterattack_hard (transfer experiments)
+
+<div align="center"><img src="imgs/fig_results_easy.png" width="580"></div>
+
+*Win rate curves in GRF 11-vs-11 Easy. V-GEPF + MAPPO consistently outperforms MAPPO, HAPPO, and baseline variants.*
+
+<div align="center"><img src="imgs/fig_results_hard.png" width="580"></div>
+
+*Win rate curves in GRF 11-vs-11 Hard. V-GEPF maintains its advantage under stronger opponents.*
+
+**Key findings:**
+- V-GEPF improves win rates across all GRF scenarios
+- Policies exhibit visually verifiable tactical improvement (coordinated passes, structured formations)
+- The xT-based fallback (non-VLM) also improves over baseline, validating the potential-shaping approach
+
+---
+
+### Visual Policy Analysis
+
+<div align="center"><img src="imgs/fig_visual_analysis.png" width="750"></div>
+
+*A visual analysis of V-GEPF policy in an offensive phase. Agents form coordinated positioning and coherent passing combinations aligned with human football intuition — a direct result of VLM-guided potential shaping.*
+
+---
+
+## Installation
+
 ```bash
-sh scripts/run_vllm_mappo_11v11.sh
+conda create -n v-gepf python=3.9
+conda activate v-gepf
 ```
 
-----
+1. **Install Google Research Football** following the [official repo](https://github.com/google-research/football)
+
+2. **Install base framework:**
+   ```bash
+   pip install -e .
+   ```
+
+3. **Install MiniCPM-o** following the [official guide](https://github.com/OpenBMB/MiniCPM-o)
+
+---
+
+## Quick Start
+
+### Configuration
+
+Set model paths in `light_malib/vlm/vlm_critic.py`:
+```python
+class LocalMiniCPM:
+    def __init__(self, model_path='/path/to/MiniCPM-Llama3-V-2_5', device='auto'):
+        ...
+
+class CLIPCritic:
+    def __init__(self):
+        self.clip, self.preprocess = clip.load("/path/to/CLIP/RN50.pt", device="cuda")
+```
+
+(Optional) Set OpenAI API key in `light_malib/vlm/utils.py` for GPT-based VLMs.
+
+### Run Experiments
+
+```bash
+# V-GEPF with MAPPO in 11-vs-11
+sh scripts/run_vllm_mappo_11v11.sh
+
+# xT-based potential (non-VLM alternative)
+# Uncomment xT block in light_malib/envs/gr_football/env.py step()
+```
+
+---
 
 ## Core Implementation
 
-The main logic for V-GEPF is located in the following files:
+| File | Description |
+|------|-------------|
+| `light_malib/vlm/vlm_critic.py` | VLM critics: `MiniCPMCritic`, `CLIPCritic` — compute potential rewards from game state images |
+| `light_malib/vlm/utils.py` | `RealTimeDrawer` (state → image), `vLLMAgent` + `vLLMMemory` (adaptive selector) |
+| `light_malib/algorithm/mappo/trainer.py` | MAPPO training loop with potential reward integration and Ray parallelization |
 
--   `light_malib/vlm/vlm_critic.py`: Implements the VLM-based critics (e.g., `MiniCPMCritic`, `CLIPCritic`) that analyze game states and generate potential rewards.
--   `light_malib/vlm/utils.py`: Contains helper utilities, including `RealTimeDrawer` for converting game states into images and `vLLMAgent` + `vLLMMemory` for high-level skill selection.
--   `light_malib/algorithm/mappo/trainer.py`: Integrates potential rewards from the VLM critic into the MAPPO training loop, guiding policy learning toward desired behaviors. Supports efficient batch rendering and VLM inference, leveraging Ray for scalable parallelization.
-
-----
-
-## Alternative: xT-based Potential Reward
-
-This repository also includes a traditional, non-VLM potential reward function based on Expected Threat (xT). To enable it:
-
-1.  Open the file `light_malib/envs/gr_football/env.py`.
-2.  In the `step` method, uncomment the code block responsible for calculating and adding the `xG` and `xT` potential rewards.
-
-----
-
-## Original GRF MARL Lib Documentation
-
-For more information about the underlying MARL framework, including its architecture, supported algorithms (IPPO, MAPPO, HAPPO), and other features, please refer to the original `README.md` content available in the [GRF MARL Lib repository](https://github.com/jidiai/GRF_MARL) or in the `README_GRF_MARL_Lib.md` file in this repo.
-
-----
+---
 
 ## Citation
-
-If you use this code in your research, please consider citing our paper:
 
 ```bibtex
 @inproceedings{ma2025vision,
@@ -120,3 +189,10 @@ If you use this code in your research, please consider citing our paper:
   year={2025}
 }
 ```
+
+---
+
+## Contact
+
+- **First Author:** Hao Ma — CASIA
+- **Corresponding Author:** zhiqiang.pu@ia.ac.cn (Prof. Zhiqiang Pu)
